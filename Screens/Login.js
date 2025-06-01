@@ -1,13 +1,14 @@
+// Screens/Login.js
 import React, {useState} from 'react';
 import { useFonts, Poppins_400Regular, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import AppLoading from 'expo-app-loading';
 
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native'
 
-const Login = () => {
+const Login = ({ onLogin }) => { // Destructure onLogin from props
   const [user, setUser] = useState('')
   const [password, setPassword] = useState('')
-  
+
   const valid = () => {
     if(user === '' && password === ''){
       alert("Preencha o campo de usuário e senha!")
@@ -18,12 +19,12 @@ const Login = () => {
     }else{
       if(user === 'Admin' && password === 'Admin123'){
         alert("Pronto")
-        // Navegação das telas ... 
+        onLogin(); // Call the onLogin prop here to change the state in App.js
       }else{
         alert("Usuário ou senha incorretos!")
       }
     }
-  }  
+  }
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
     Poppins_700Bold,
@@ -49,6 +50,7 @@ const Login = () => {
   )
 }
 
+
 const style = StyleSheet.create({
   container: {
     backgroundColor: '#0F172A',
@@ -60,7 +62,7 @@ const style = StyleSheet.create({
   },
 
   box: {
-    padding: 20, 
+    padding: 20,
     gap: 15,
     borderRadius: 10,
     backgroundColor: '#293C7B',
@@ -102,6 +104,5 @@ const style = StyleSheet.create({
     alignItems: 'center'
   }
 })
-
 
 export default Login;
