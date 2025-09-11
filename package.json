@@ -5,7 +5,9 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "update": "git pull origin main",
+    "push": "git add . && git commit -m \"update\" && git push origin main"
   },
   "dependencies": {
     "expo": "~53.0.22",
@@ -29,9 +31,6 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
-  },
-  "scripts": {
-    "push": "git add . && git commit -m 'update' && git push origin main"
   },
   "private": true
 }
