@@ -21,7 +21,7 @@ export default function Menu() {
 
   const userFromParams = route.params?.user || null;
   const [user, setUser] = useState(userFromParams);
-
+  const [modalType, setModalType] = useState(null);
   const [arenas, setArenas] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -407,102 +407,83 @@ export default function Menu() {
   ]);
 
 
-   const [novoNome, setNovoNome] = useState(user?.nome || "");
+   const [novoNome, setNovoNome] = useState(user?.nome);
 
    async function atualizarUsuario() {
+     if (!novoNome.trim()) {
+       alert("O nome não pode ser vazio.");
+       return;
+     }
+     if (!user?.id) {
+       alert("Usuário não está definido.");
+       return;
+     }
+
      try {
+       console.log("Tentando atualizar nome para:", novoNome);
        const { data, error } = await supabase
-         .from("usuarios") // tua tabela
-         .update({ nome: novoNome })
-         .eq("id", usuario.id); // precisa de um identificador único
+         .from("usuarios")
+         .update({ nome: novoNome.trim() })
+         .eq("id", user.id);
+
+       console.log("Resposta do Supabase:", data, error);
 
        if (error) {
-         console.log("Erro ao atualizar:", error.message);
-       } else {
-         console.log("Usuário atualizado:", data);
+         alert("Erro ao atualizar: " + error.message);
+       } else if (data && data.length > 0) {
+         setUser ((prev) => ({
+           ...prev,
+           nome: data[0].nome,
+         }));
          alert("Nome atualizado com sucesso!");
+         setModalVisible(false);
+       } else {
+         alert("Nenhum registro foi atualizado. Verifique o id e a tabela.");
        }
      } catch (err) {
        console.log("Erro inesperado:", err);
+       alert("Erro inesperado ao atualizar nome.");
      }
    }
 
-  const openInfoModal = (type) => {
-    if(type === "perfil"){
-        setModalTitle("Perfil")
-    }else if(type === "reservas"){
-        setModalTitle("Reservas")
-    }else{
-        setModalTitle("Notificações")
-    }
 
-    if (type === 'notifications') {
-      setModalContent(
-        notifications.length > 0 ? (
-          notifications.map((n) => (
-            <Text key={n.id} style={styles.modalText}>
-              • {n.text}
-            </Text>
-          ))
-        ) : (
-          <Text style={styles.modalText}>Nenhuma notificação.</Text>
-        )
-      );
-    } else if(type === "reservas") {
-      setModalContent(
-        reservas.length > 0 ? (
-          reservas.map((r) => (
-            <Text key={r.id} style={styles.modalText}>
-              • {r.nome} - {r.data} às {r.horario}
-            </Text>
-          ))
-        ) : (
-          <Text style={styles.modalText}>Nenhuma reserva.</Text>
-        )
-      );
-    }else{
+    const openInfoModal = (type) => {
+      setModalType(type);
+
+      if (type === "perfil") {
+        setNovoNome(user?.nome || "");
+        setModalTitle("Perfil");
+        setModalContent(null); // limpa conteúdo fixo para perfil
+      } else if (type === "reservas") {
+        setModalTitle("Reservas");
         setModalContent(
-          <View style={{ padding: 20 }}>
-            <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 10 }}>
-              Informações do Usuário
-            </Text>
-            {/* Input de Nome */}
-            <Text>Nome:</Text>
-            <TextInput
-              value={novoNome}
-              onChangeText={setNovoNome}
-              placeholder="Digite seu nome"
-              style={{
-                borderWidth: 1,
-                borderColor: "#ccc",
-                borderRadius: 8,
-                padding: 8,
-                marginBottom: 15,
-              }}
-            />
-
-            {/* E-mail só exibe */}
-            <Text>Email: {user?.email}</Text>
-
-            {/* Botão de Confirmar */}
-            <TouchableOpacity
-              style={{
-                backgroundColor: "#4B0082",
-                padding: 10,
-                marginTop: 20,
-                borderRadius: 8,
-              }}
-              onPress={atualizarUsuario}
-            >
-              <Text style={{ color: "#fff", textAlign: "center", fontWeight: "bold" }}>
-                Confirmar
+          reservas.length > 0 ? (
+            reservas.map((r) => (
+              <Text key={r.id} style={styles.modalText}>
+                • {r.nome} - {r.data} às {r.horario}
               </Text>
-            </TouchableOpacity>
-          </View>
+            ))
+          ) : (
+            <Text style={styles.modalText}>Nenhuma reserva.</Text>
+          )
         );
-    }
-    setModalVisible(true);
-  };
+      } else if (type === "notifications") {
+        setModalTitle("Notificações");
+        setModalContent(
+          notifications.length > 0 ? (
+            notifications.map((n) => (
+              <Text key={n.id} style={styles.modalText}>
+                • {n.text}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.modalText}>Nenhuma notificação.</Text>
+          )
+        );
+      }
+      setModalVisible(true);
+    };
+
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -621,19 +602,59 @@ export default function Menu() {
         visible={modalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setModalVisible(false)}>
+        onRequestClose={() => setModalVisible(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Text style={styles.modalTitle}>{modalTitle}</Text>
-            <ScrollView>{modalContent}</ScrollView>
+            <ScrollView>
+              {modalType === "perfil" ? (
+                <View style={{ padding: 20 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 10 }}>
+                    Informações do Usuário
+                  </Text>
+                  <Text>Nome:</Text>
+                  <TextInput
+                    value={novoNome}
+                    onChangeText={setNovoNome}
+                    placeholder="Digite seu nome"
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#ccc",
+                      borderRadius: 8,
+                      padding: 8,
+                      marginBottom: 15,
+                    }}
+                  />
+                  <Text>Email: {user?.email}</Text>
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: "#4B0082",
+                      padding: 10,
+                      marginTop: 20,
+                      borderRadius: 8,
+                    }}
+                    onPress={atualizarUsuario}
+                  >
+                    <Text style={{ color: "#fff", textAlign: "center", fontWeight: "bold" }}>
+                      Confirmar
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                modalContent
+              )}
+            </ScrollView>
             <TouchableOpacity
               style={styles.modalCloseButton}
-              onPress={() => setModalVisible(false)}>
-              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Fechar</Text>
+              onPress={() => setModalVisible(false)}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold" }}>Fechar</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 }
