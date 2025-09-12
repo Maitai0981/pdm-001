@@ -407,7 +407,14 @@ export default function Menu() {
   ]);
 
   const openInfoModal = (type) => {
-    setModalTitle(type === 'notifications' ? 'Notificações' : 'Reservas');
+    if(type === "perfil"){
+        setModalTitle("Perfil")
+    }else if(type === "reservas"){
+        setModalTitle("Reservas")
+    }else{
+        setModalTitle("Notificações")
+    }
+
     if (type === 'notifications') {
       setModalContent(
         notifications.length > 0 ? (
@@ -446,13 +453,24 @@ export default function Menu() {
     }
   };
 
+  const perfil = () => {
+    if(user?.nome){
+        return(
+            openInfoModal("perfil")
+        );
+    }else{
+        return(
+            navigation.navigate("Login")
+        );
+    }
+  }
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity >
-            <Ionicons name="person-circle" size={40} color="#4B0082" />
+            <Ionicons name="person-circle" size={40} color="#4B0082" onPress={perfil}/>
           </TouchableOpacity>
           <Text style={styles.headerText}>
             Olá, {user?.nome || 'Visitante'}
