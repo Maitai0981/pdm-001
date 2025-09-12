@@ -20,12 +20,58 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
 
   // Função para editar - navega para tela de edição (CadastroEstabelecimento) passando o estabelecimento
   const handleEditar = () => {
-    navigation.navigate('CadastroEstabelecimento', { estabelecimento, usuario: usuarioAtual });
+    navigation.navigate('CadastroEstabelecimento', {
+      estabelecimento,
+      usuario: usuarioAtual,
+    });
   };
 
   useEffect(() => {
     console.log('Usuário atual na tela de detalhes:', usuarioAtual);
   }, [usuarioAtual]);
+
+  const formatDias = (dias) => {
+    if (!dias) return 'Não informado';
+
+    const mapa = {
+      dom: 'Domingo',
+      seg: 'Segunda-feira',
+      ter: 'Terça-feira',
+      qua: 'Quarta-feira',
+      qui: 'Quinta-feira',
+      sex: 'Sexta-feira',
+      sab: 'Sábado',
+
+    };
+
+    const ordem = ['dom','seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+
+    const lista = dias.toLowerCase().split(',').map((d) => d.trim());
+    const traduzidos = lista.map((d) => mapa[d] || d);
+
+    // Detecta se são dias consecutivos
+    const indices = lista.map((d) => ordem.indexOf(d)).sort((a, b) => a - b);
+    let consecutivos = true;
+    for (let i = 1; i < indices.length; i++) {
+      if (indices[i] !== indices[i - 1] + 1) {
+        consecutivos = false;
+        break;
+      }
+    }
+
+    if (consecutivos && indices.length > 1) {
+      return `${mapa[ordem[indices[0]]]} a ${
+        mapa[ordem[indices[indices.length - 1]]]
+      }`;
+    }
+
+    // Caso não seja consecutivo, lista normalmente
+    if (traduzidos.length > 1) {
+      return traduzidos.slice(0, -1).join(', ') + ' e ' + traduzidos.slice(-1);
+    }
+
+    return traduzidos[0];
+  };
 
   // Função para excluir com confirmação e exclusão real no Supabase
   const handleExcluir = () => {
@@ -146,7 +192,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
         <View style={styles.infoCard}>
           <Text style={styles.infoLabel}>Funcionamento</Text>
           <Text style={styles.infoText}>
-            {estabelecimento.dias_funcionamento || 'Não informado'}
+            {formatDias(estabelecimento.dias_funcionamento)}
           </Text>
         </View>
 
