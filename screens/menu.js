@@ -72,7 +72,6 @@ export default function Menu() {
         </View>
       );
     }
-
     return (
       <View style={style}>
         {isLoading && (
@@ -452,7 +451,9 @@ export default function Menu() {
       {/* Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Ionicons name="person-circle" size={40} color="#4B0082" />
+          <TouchableOpacity >
+            <Ionicons name="person-circle" size={40} color="#4B0082" />
+          </TouchableOpacity>
           <Text style={styles.headerText}>
             Olá, {user?.nome || 'Visitante'}
           </Text>
