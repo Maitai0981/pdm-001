@@ -406,6 +406,27 @@ export default function Menu() {
     { id: 1, nome: 'Arena 15', data: '2024-06-10', horario: '18:00' },
   ]);
 
+
+   const [novoNome, setNovoNome] = useState(user?.nome || "");
+
+   async function atualizarUsuario() {
+     try {
+       const { data, error } = await supabase
+         .from("usuarios") // tua tabela
+         .update({ nome: novoNome })
+         .eq("id", usuario.id); // precisa de um identificador único
+
+       if (error) {
+         console.log("Erro ao atualizar:", error.message);
+       } else {
+         console.log("Usuário atualizado:", data);
+         alert("Nome atualizado com sucesso!");
+       }
+     } catch (err) {
+       console.log("Erro inesperado:", err);
+     }
+   }
+
   const openInfoModal = (type) => {
     if(type === "perfil"){
         setModalTitle("Perfil")
@@ -427,7 +448,7 @@ export default function Menu() {
           <Text style={styles.modalText}>Nenhuma notificação.</Text>
         )
       );
-    } else {
+    } else if(type === "reservas") {
       setModalContent(
         reservas.length > 0 ? (
           reservas.map((r) => (
@@ -439,6 +460,46 @@ export default function Menu() {
           <Text style={styles.modalText}>Nenhuma reserva.</Text>
         )
       );
+    }else{
+        setModalContent(
+          <View style={{ padding: 20 }}>
+            <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 10 }}>
+              Informações do Usuário
+            </Text>
+            {/* Input de Nome */}
+            <Text>Nome:</Text>
+            <TextInput
+              value={novoNome}
+              onChangeText={setNovoNome}
+              placeholder="Digite seu nome"
+              style={{
+                borderWidth: 1,
+                borderColor: "#ccc",
+                borderRadius: 8,
+                padding: 8,
+                marginBottom: 15,
+              }}
+            />
+
+            {/* E-mail só exibe */}
+            <Text>Email: {user?.email}</Text>
+
+            {/* Botão de Confirmar */}
+            <TouchableOpacity
+              style={{
+                backgroundColor: "#4B0082",
+                padding: 10,
+                marginTop: 20,
+                borderRadius: 8,
+              }}
+              onPress={atualizarUsuario}
+            >
+              <Text style={{ color: "#fff", textAlign: "center", fontWeight: "bold" }}>
+                Confirmar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
     }
     setModalVisible(true);
   };
