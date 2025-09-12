@@ -179,6 +179,7 @@ export default function Menu() {
         horario_fechamento,
         valor_reserva,
         cidade,
+        cep,
         estabelecimento_infraestrutura (
           disponivel,
           tipos_infraestrutura (nome)

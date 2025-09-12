@@ -24,6 +24,8 @@ export default function CadastroEstabelecimento() {
   const route = useRoute();
 
   const [user, setUser] = useState(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [estabelecimentoId, setEstabelecimentoId] = useState(null);
 
   const [imagemDia, setImagemDia] = useState(null);
   const [imagemNoite, setImagemNoite] = useState(null);
@@ -129,33 +131,40 @@ export default function CadastroEstabelecimento() {
   async function salvarImagemNoStorage(estabelecimentoId, tipo, uri) {
     try {
       logStep(`Iniciando upload da imagem ${tipo} no Storage`);
-
-      // Lê como base64
-      const base64 = await FileSystem.readAsStringAsync(uri, {
+  
+      let localUri = uri;
+  
+      if (!uri.startsWith('file://')) {
+        const fileName = `${estabelecimentoId}_${tipo}.jpg`;
+        const path = FileSystem.cacheDirectory + fileName;
+        await FileSystem.downloadAsync(uri, path);
+        localUri = path;
+      }
+  
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
-      // Converte para Uint8Array
+  
       const fileBytes = base64ToUint8Array(base64);
-
+  
       const filePath = `estabelecimentos/${estabelecimentoId}_${tipo}.jpg`;
-
+  
       const { data, error } = await supabase.storage
         .from('imagens-estabelecimentos')
         .upload(filePath, fileBytes, {
           contentType: 'image/jpeg',
           upsert: true,
         });
-
+  
       if (error) {
         logStep(`Erro ao salvar imagem ${tipo}`, error, 'ERROR');
         throw error;
       }
-
+  
       const { data: publicUrlData } = supabase.storage
         .from('imagens-estabelecimentos')
         .getPublicUrl(filePath);
-
+  
       logStep(`Imagem ${tipo} salva com sucesso`, publicUrlData);
       return publicUrlData.publicUrl;
     } catch (error) {
@@ -163,6 +172,7 @@ export default function CadastroEstabelecimento() {
       throw error;
     }
   }
+  
 
   async function fetchTiposEstabelecimento() {
     logStep('Buscando tipos de estabelecimento');
@@ -212,10 +222,72 @@ export default function CadastroEstabelecimento() {
     }
   }
 
+  // Nova função para carregar dados do estabelecimento existente
+  async function carregarDadosEstabelecimento(estabelecimento) {
+    try {
+      logStep('Carregando dados do estabelecimento para edição', { id: estabelecimento.id });
+      
+      // Preencher dados básicos
+      setNome(estabelecimento.nome || '');
+      setCidade(estabelecimento.cidade || '');
+      setCep(estabelecimento.cep || '');
+      setHorarioAbertura(estabelecimento.horario_abertura?.substring(0, 5) || '');
+      setHorarioFechamento(estabelecimento.horario_fechamento?.substring(0, 5) || '');
+      setValorReserva(estabelecimento.valor_reserva?.toString() || '');
+      setTempoReserva(estabelecimento.tempo_reserva?.toString() || '60');
+
+      // Encontrar e definir o tipo do estabelecimento
+      if (estabelecimento.tipo && tiposEstabelecimento.length > 0) {
+        const tipoEncontrado = tiposEstabelecimento.find(t => t.nome === estabelecimento.tipo);
+        if (tipoEncontrado) {
+          setTipoId(tipoEncontrado.id);
+        }
+      }
+
+      // Carregar dias de funcionamento
+      if (estabelecimento.dias_funcionamento) {
+        const diasNomes = estabelecimento.dias_funcionamento.split(',');
+        const diasIds = diasSemana
+          .filter(dia => diasNomes.includes(dia.abreviacao))
+          .map(dia => dia.id);
+        setDiasSelecionados(diasIds);
+      }
+
+      // Carregar infraestruturas
+      if (estabelecimento.estabelecimento_infraestrutura) {
+        const infraObj = {};
+        estabelecimento.estabelecimento_infraestrutura.forEach(item => {
+          infraObj[item.tipos_infraestrutura.nome] = item.disponivel;
+        });
+        setInfraSelecionadas(infraObj);
+      }
+
+      // Carregar imagens
+      if (estabelecimento.imagem_dia) {
+        setImagemDia(estabelecimento.imagem_dia);
+      }
+      if (estabelecimento.imagem_noite) {
+        setImagemNoite(estabelecimento.imagem_noite);
+      }
+
+      logStep('Dados do estabelecimento carregados com sucesso');
+    } catch (error) {
+      logStep('Erro ao carregar dados do estabelecimento', error, 'ERROR');
+      Alert.alert('Erro', 'Não foi possível carregar os dados do estabelecimento');
+    }
+  }
+
   useEffect(() => {
     async function initialize() {
       try {
         logStep('Inicializando componente');
+
+        // Verificar se é modo de edição
+        if (route.params?.estabelecimento) {
+          setIsEditMode(true);
+          setEstabelecimentoId(route.params.estabelecimento.id);
+          logStep('Modo de edição detectado', { id: route.params.estabelecimento.id });
+        }
 
         const {
           data: { session },
@@ -254,6 +326,13 @@ export default function CadastroEstabelecimento() {
     fetchDiasSemana();
     fetchInfraestruturas();
   }, []);
+
+  // useEffect para carregar dados quando os dados básicos estiverem prontos
+  useEffect(() => {
+    if (isEditMode && route.params?.estabelecimento && tiposEstabelecimento.length > 0 && diasSemana.length > 0) {
+      carregarDadosEstabelecimento(route.params.estabelecimento);
+    }
+  }, [isEditMode, tiposEstabelecimento, diasSemana]);
 
   const handleToggleDia = useCallback((id) => {
     logStep('Alternando dia selecionado', { id });
@@ -358,7 +437,7 @@ export default function CadastroEstabelecimento() {
         .map((d) => d.abreviacao)
         .join(',');
 
-      logStep('Dados para inserção no estabelecimento', {
+      const dadosEstabelecimento = {
         nome,
         tipo: tiposEstabelecimento.find((t) => t.id === tipoId)?.nome || '',
         cidade,
@@ -369,40 +448,69 @@ export default function CadastroEstabelecimento() {
         tempo_reserva: parseInt(tempoReserva, 10),
         dias_funcionamento: diasNomes,
         usuario_id: usuarioId,
-      });
+      };
 
-      // Inserir estabelecimento (sem imagens)
-      const { data: estabelecimento, error } = await supabase
-        .from('estabelecimentos')
-        .insert([
-          {
-            nome,
-            tipo: tiposEstabelecimento.find((t) => t.id === tipoId)?.nome || '',
-            cidade,
-            cep,
-            horario_abertura: horarioAbertura,
-            horario_fechamento: horarioFechamento,
-            valor_reserva: parseFloat(valorReserva),
-            tempo_reserva: parseInt(tempoReserva, 10),
-            dias_funcionamento: diasNomes,
-            usuario_id: usuarioId,
-          },
-        ])
-        .select()
-        .single();
+      logStep('Dados para processamento', dadosEstabelecimento);
 
-      if (error) {
-        logStep('Erro ao inserir estabelecimento', error, 'ERROR');
-        Alert.alert(
-          'Erro',
-          `Falha ao salvar estabelecimento: ${error.message}`
-        );
-        return;
+      let estabelecimento;
+
+      if (isEditMode) {
+        // Modo de edição - atualizar estabelecimento existente
+        logStep('Atualizando estabelecimento existente', { id: estabelecimentoId });
+        
+        const { data, error } = await supabase
+          .from('estabelecimentos')
+          .update(dadosEstabelecimento)
+          .eq('id', estabelecimentoId)
+          .select()
+          .single();
+
+        if (error) {
+          logStep('Erro ao atualizar estabelecimento', error, 'ERROR');
+          Alert.alert(
+            'Erro',
+            `Falha ao atualizar estabelecimento: ${error.message}`
+          );
+          return;
+        }
+
+        estabelecimento = data;
+        logStep('Estabelecimento atualizado com sucesso', { id: estabelecimento.id });
+
+        // Remover dias de funcionamento existentes e inserir novos
+        await supabase
+          .from('estabelecimento_dias_funcionamento')
+          .delete()
+          .eq('estabelecimento_id', estabelecimentoId);
+
+        // Remover infraestruturas existentes e inserir novas
+        await supabase
+          .from('estabelecimento_infraestrutura')
+          .delete()
+          .eq('estabelecimento_id', estabelecimentoId);
+
+      } else {
+        // Modo de criação - inserir novo estabelecimento
+        logStep('Criando novo estabelecimento');
+        
+        const { data, error } = await supabase
+          .from('estabelecimentos')
+          .insert([dadosEstabelecimento])
+          .select()
+          .single();
+
+        if (error) {
+          logStep('Erro ao inserir estabelecimento', error, 'ERROR');
+          Alert.alert(
+            'Erro',
+            `Falha ao salvar estabelecimento: ${error.message}`
+          );
+          return;
+        }
+
+        estabelecimento = data;
+        logStep('Estabelecimento inserido com sucesso', { id: estabelecimento.id });
       }
-
-      logStep('Estabelecimento inserido com sucesso', {
-        id: estabelecimento.id,
-      });
 
       // Salvar imagens na tabela imagens-estabelecimento
       if (imagemDia) {
@@ -463,8 +571,8 @@ export default function CadastroEstabelecimento() {
         }
       }
 
-      logStep('Processo de cadastro concluído com sucesso');
-      Alert.alert('Sucesso', 'Estabelecimento cadastrado!');
+      logStep('Processo de salvamento concluído com sucesso');
+      Alert.alert('Sucesso', isEditMode ? 'Estabelecimento atualizado!' : 'Estabelecimento cadastrado!');
       navigation.goBack();
     } catch (error) {
       logStep('Erro não tratado no processo de salvamento', error, 'ERROR');
@@ -476,7 +584,9 @@ export default function CadastroEstabelecimento() {
     <ScrollView
       contentContainerStyle={styles.container}
       keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>Cadastrar Estabelecimento</Text>
+      <Text style={styles.title}>
+        {isEditMode ? 'Editar Estabelecimento' : 'Cadastrar Estabelecimento'}
+      </Text>
 
       <Text style={styles.label}>Nome *</Text>
       <TextInput
@@ -632,7 +742,9 @@ export default function CadastroEstabelecimento() {
       )}
 
       <TouchableOpacity style={styles.button} onPress={handleSave}>
-        <Text style={styles.buttonText}>Salvar</Text>
+        <Text style={styles.buttonText}>
+          {isEditMode ? 'Atualizar' : 'Salvar'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   );
