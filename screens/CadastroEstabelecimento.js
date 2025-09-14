@@ -10,6 +10,8 @@ import {
   Switch,
   Platform,
   Image,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { supabase } from '../supabaseClient';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -23,6 +25,7 @@ export default function CadastroEstabelecimento() {
   const navigation = useNavigation();
   const route = useRoute();
 
+  const [carregando, setCarregando] = useState(false);
   const [user, setUser] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [estabelecimentoId, setEstabelecimentoId] = useState(null);
@@ -378,6 +381,7 @@ export default function CadastroEstabelecimento() {
   }
 
   const handleSave = async () => {
+    setCarregando(true);
     logStep('Iniciando processo de salvamento do estabelecimento');
 
     try {
@@ -577,6 +581,8 @@ export default function CadastroEstabelecimento() {
     } catch (error) {
       logStep('Erro não tratado no processo de salvamento', error, 'ERROR');
       Alert.alert('Erro', `Ocorreu um erro inesperado: ${error.message}`);
+    } finally {
+      setCarregando(false);
     }
   };
 
@@ -746,6 +752,12 @@ export default function CadastroEstabelecimento() {
           {isEditMode ? 'Atualizar' : 'Salvar'}
         </Text>
       </TouchableOpacity>
+      <Modal transparent visible={carregando} animationType="fade">
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#4B0082" />
+        </View>
+      </Modal>
+
     </ScrollView>
   );
 }
@@ -886,4 +898,17 @@ const pickerSelectStyles = StyleSheet.create({
     paddingRight: 30,
     marginBottom: 15,
   },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+
 });
