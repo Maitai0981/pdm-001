@@ -10,7 +10,7 @@ import {
   Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { supabase } from '../supabaseClient'; 
+import { supabase } from '../supabaseClient';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -55,11 +55,12 @@ export default function Register() {
       const { data, error } = await supabase
         .from('usuarios')
         .insert([{ nome: name, email, senha: password }])
-        .select() // para retornar o registro inserido
+        .select()
         .single();
 
       if (error) {
         setError('Erro ao registrar usuário');
+        console.log(error);
         setLoading(false);
         return;
       }

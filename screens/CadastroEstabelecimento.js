@@ -330,7 +330,7 @@ export default function CadastroEstabelecimento() {
               'Erro',
               'Usuário não autenticado. Faça login para continuar.'
             );
-            navigation.goBack();
+            navigation.navigate('Menu');
           }
         }
       } catch (error) {

@@ -391,7 +391,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
                             if (error) throw error;
                             setDeletando(false);
                             Alert.alert('Sucesso', 'Estabelecimento excluído.');
-                            navigation.goBack();
+                            navigation.native('Menu');
                           } catch (error) {
                             setDeletando(false);
                             Alert.alert(

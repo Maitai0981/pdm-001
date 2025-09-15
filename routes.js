@@ -6,8 +6,6 @@ import * as Linking from "expo-linking";
 import SplashScreen from "./screens/SplashScreen";
 import LoginScreen from "./screens/loginScreen";
 import RegisterScreen from "./screens/registerScreen";
-import RememberScreen from "./screens/rememberPasswordScreen";
-import ResetPasswordScreen from "./screens/ResetPassword";
 import MenuScreen from "./screens/menu";
 import CadastroEstabelecimento from "./screens/CadastroEstabelecimento";
 import EstabelecimentoDetalhes from "./screens/EstabelecimentoDetalhes";
@@ -23,8 +21,6 @@ export default function Routes() {
           Splash: "splash",
           Register: "register",
           Login: "login",
-          Remember: "remember-password",
-          ResetPassword: "reset-password",
           Menu: "menu",
           CadastroEstabelecimento: "cadastro-estabelecimento",
           EstabelecimentoDetalhes: "estabelecimento-detalhes",
@@ -42,8 +38,6 @@ export default function Routes() {
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Register" component={RegisterScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Remember" component={RememberScreen} />
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="CadastroEstabelecimento" component={CadastroEstabelecimento}/>
         <Stack.Screen name="EstabelecimentoDetalhes" component={EstabelecimentoDetalhes} />
         <Stack.Screen name="Menu" component={MenuScreen} />

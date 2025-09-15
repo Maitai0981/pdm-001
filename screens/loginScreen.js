@@ -121,13 +121,6 @@ export default function Login() {
           </Text>
         </Text>
 
-        <Text style={styles.loginText}>
-          <Text
-            style={styles.link}
-            onPress={() => navigation.navigate('Remember')}>
-            Esqueci minha senha
-          </Text>
-        </Text>
       </View>
     </View>
   );
