@@ -23,6 +23,22 @@ import { payload as gerarPayloadPixLibrary } from 'react-qrcode-pix';
 
 const { width: screenWidth } = Dimensions.get('window');
 
+// Funções de formatação adicionadas
+const formatarCpf = (cpf) => {
+  if (!cpf) return '';
+  return cpf.replace(/\D/g, '');
+};
+
+const formatarTelefone = (telefone) => {
+  if (!telefone) return '';
+  return telefone.replace(/[\s()-]/g, '');
+};
+
+const formatarEmail = (email) => {
+  if (!email) return '';
+  return email.trim().toLowerCase();
+};
+
 export default function EstabelecimentoDetalhes({ route, navigation }) {
   const { estabelecimento: estabProps, usuarioAtual } = route.params;
 
@@ -46,16 +62,21 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
     const fetchEstabelecimento = async () => {
       const { data, error } = await supabase
         .from('estabelecimentos')
-        .select(`
+        .select(
+          `
           *,
           imagens_estabelecimento!inner(url, tipo),
           estabelecimento_infraestrutura!inner(tipos_infraestrutura(nome)),
           estabelecimento_dias_funcionamento!inner(dias_semana(abreviacao))
-        `)
+        `
+        )
         .eq('id', estabProps.id);
 
       if (error) {
-        Alert.alert('Erro', 'Não foi possível carregar os detalhes do estabelecimento.');
+        Alert.alert(
+          'Erro',
+          'Não foi possível carregar os detalhes do estabelecimento.'
+        );
         console.error(error);
         return;
       }
@@ -63,15 +84,22 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       // Mapeia os dados para o formato que o componente espera
       const mappedEstabelecimento = {
         ...data,
-        imagem_dia: data.imagens_estabelecimento.find(img => img.tipo?.toLowerCase().trim() === 'dia')?.url,
-        imagem_noite: data.imagens_estabelecimento.find(img => img.tipo?.toLowerCase().trim() === 'noite')?.url,
+        imagem_dia: data.imagens_estabelecimento.find(
+          (img) => img.tipo?.toLowerCase().trim() === 'dia'
+        )?.url,
+        imagem_noite: data.imagens_estabelecimento.find(
+          (img) => img.tipo?.toLowerCase().trim() === 'noite'
+        )?.url,
 
-        infraestrutura: data.estabelecimento_infraestrutura.reduce((acc, curr) => {
-          acc[curr.tipos_infraestrutura.nome] = true;
-          return acc;
-        }, {}),
+        infraestrutura: data.estabelecimento_infraestrutura.reduce(
+          (acc, curr) => {
+            acc[curr.tipos_infraestrutura.nome] = true;
+            return acc;
+          },
+          {}
+        ),
         dias_funcionamento: data.estabelecimento_dias_funcionamento
-          .map(d => d.dias_semana.abreviacao)
+          .map((d) => d.dias_semana.abreviacao)
           .join(','),
       };
       setEstabelecimento(mappedEstabelecimento);
@@ -97,7 +125,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       qua: 'Quarta-feira',
       qui: 'Quinta-feira',
       sex: 'Sexta-feira',
-      sab: 'Sábado',
+      sáb: 'Sábado',
     };
 
     const ordem = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -139,9 +167,10 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       hFim = 24;
     }
 
-    const intervalo = estabelecimento.tempo_reserva && estabelecimento.tempo_reserva > 0
-      ? estabelecimento.tempo_reserva
-      : 60;
+    const intervalo =
+      estabelecimento.tempo_reserva && estabelecimento.tempo_reserva > 0
+        ? estabelecimento.tempo_reserva
+        : 60;
 
     let current = hInicio * 60 + mInicio;
     const end = hFim * 60 + mFim;
@@ -217,7 +246,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
   const abrirModalReserva = () => {
     setModalReservaVisivel(true);
     setMostrarPagamento(false);
-    if(estabelecimento) {
+    if (estabelecimento) {
       carregarHorarios(dataReserva);
     }
   };
@@ -238,19 +267,35 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
   };
 
   const valorTotal = (
-    horariosSelecionados.length * parseFloat(estabelecimento?.valor_reserva || 0)
+    horariosSelecionados.length *
+    parseFloat(estabelecimento?.valor_reserva || 0)
   ).toFixed(2);
 
+  const formatarEmail = (email) => {
+    if (!email) return '';
+    return email.trim().toLowerCase();
+  };
+
   const gerarPayloadPix = () => {
-    const valorNumerico = parseFloat(valorTotal)+0.000001;
+    const valorNumerico = parseFloat(valorTotal) + 0.000001;
 
     if (valorNumerico <= 0) {
-        Alert.alert('Erro', 'O valor total do PIX deve ser maior que zero.');
-        throw new Error('Valor do PIX deve ser maior que zero');
+      Alert.alert('Erro', 'O valor total do PIX deve ser maior que zero.');
+      throw new Error('Valor do PIX deve ser maior que zero');
+    }
+
+    // Identifica o tipo de chave para aplicar a formatação correta
+    let chavePixFormatada = estabelecimento.key_pix;
+
+    if (chavePixFormatada.includes('@')) {
+      chavePixFormatada = formatarEmail(chavePixFormatada);
+    } else {
+      // Se não for um e-mail, presume-se ser CPF, telefone ou CNPJ e remove caracteres não numéricos
+      chavePixFormatada = chavePixFormatada.replace(/\D/g, '');
     }
 
     return gerarPayloadPixLibrary({
-      pixkey: estabelecimento.key_pix,
+      pixkey: chavePixFormatada,
       merchant: estabelecimento.nome.substring(0, 25),
       city: estabelecimento.cidade.substring(0, 15),
       amount: valorNumerico,
@@ -272,7 +317,10 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
   const handleCopiarPix = () => {
     const pixPayload = gerarPayloadPix();
     Clipboard.setString(pixPayload);
-    Alert.alert('Código PIX Copiado', 'O código PIX foi copiado para a área de transferência. Agora, abra seu app bancário e utilize a opção "Pix Copia e Cola" para realizar o pagamento.');
+    Alert.alert(
+      'Código PIX Copiado',
+      'O código PIX foi copiado para a área de transferência. Agora, abra seu app bancário e utilize a opção "Pix Copia e Cola" para realizar o pagamento.'
+    );
   };
 
   const confirmarPagamento = async () => {
@@ -333,7 +381,8 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
     }
   };
 
-  const isDono = usuarioAtual && estabelecimento?.usuario_id === usuarioAtual.id;
+  const isDono =
+    usuarioAtual && estabelecimento?.usuario_id === usuarioAtual.id;
 
   const onChangeDate = (event, selectedDate) => {
     setShowDatePicker(Platform.OS === 'ios');
@@ -388,7 +437,19 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
                               .from('estabelecimentos')
                               .delete()
                               .eq('id', estabelecimento.id);
-                            if (error) throw error;
+                            if (error) {
+                              if (
+                                error.code === '23503' ||
+                                error.message.includes(
+                                  'violates foreign key constraint'
+                                )
+                              ) {
+                                throw new Error(
+                                  'Este estabelecimento não pode ser excluído, pois já tem reservas associadas. É necessário excluir todas as reservas primeiro.'
+                                );
+                              }
+                              throw error;
+                            }
                             setDeletando(false);
                             Alert.alert('Sucesso', 'Estabelecimento excluído.');
                             navigation.native('Menu');
@@ -594,7 +655,9 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
                       styles.modalActionButtonPrimary,
                     ]}
                     onPress={handleCopiarPix}>
-                    <Text style={styles.modalActionText}>Copiar Código PIX</Text>
+                    <Text style={styles.modalActionText}>
+                      Copiar Código PIX
+                    </Text>
                   </TouchableOpacity>
                 )}
 
@@ -618,7 +681,6 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
                     </Text>
                   )}
                 </TouchableOpacity>
-
               </View>
             ) : (
               <>
