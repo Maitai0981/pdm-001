@@ -1,134 +1,118 @@
-import React, { useState } from "react";
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { supabase } from '../supabaseClient';
 
-function Login() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+export default function RememberPassword() {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigation = useNavigation();
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (email === "admin@example.com" && password === "123456") {
-      alert("Registro realizado com sucesso!");
-      setError("");
-    } else {
-      setError("Email ou senha incorretos");
+  const handleResetPassword = async () => {
+    setError('');
+    if (!email) {
+      setError('Por favor, insira seu e-mail.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'supasport://reset-password',
+      });
+      if (error) {
+        console.log("Erro:", error.message);
+      } else {
+        console.log("E-mail de recuperação enviado!");
+      }
+
+      if (error) {
+        setError(error.message);
+      } else {
+        Alert.alert(
+          'Sucesso',
+          'Verifique seu e-mail para redefinir sua senha.'
+        );
+        navigation.navigate('Login');
+      }
+    } catch (err) {
+      setError('Ocorreu um erro inesperado.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.triangle}></div>
+    <View style={styles.container}>
+      <Text style={styles.title}>Recuperação de Senha</Text>
 
-      <form style={styles.form} onSubmit={handleLogin}>
-        <div style={styles.titleContainer}>
-          <h2 style={styles.title}>
-            Insira seu email senha
-          </h2>
-        </div>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        {error && <p style={styles.error}>{error}</p>}
+      <TextInput
+        style={styles.input}
+        placeholder="E-mail"
+        placeholderTextColor="#aaa"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={styles.input}
-          required
-        />
-        
-        <button type="submit" style={styles.button}>
-          Receber código
-        </button>
-        <p style={styles.loginText}>
-          <span style={styles.link}> Voltar </span>
-        </p>
-      </form>
-    </div>
+      <TouchableOpacity
+        style={[styles.button, loading && { opacity: 0.7 }]}
+        onPress={handleResetPassword}
+        disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Receber Código</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+        <Text style={styles.link}>Voltar</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
-const styles = {
+const styles = StyleSheet.create({
   container: {
-    position: "relative",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    height: "100vh",
-    backgroundColor: "#2F294B",
-    overflow: "hidden",
+    flex: 1,
+    backgroundColor: '#2F294B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  triangle: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    width: 0,
-    height: 0,
-    borderLeft: "100vw solid #665B99",
-    borderBottom: "200px solid transparent",
-    zIndex: 0,
-  },
-  form: {
-    position: "relative",
-    zIndex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    width: "300px",
-    backgroundColor: "transparent",
-    gap: "15px",
-  },
-  titleContainer: {
-    display: "flex",
-    justifyContent: "center",
-    width: "100%",
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: "25px",
-    color: "#fff",
-    fontFamily: "'Inter', sans-serif",
-    fontSize: "24px",
-    lineHeight: "1.4",
-  },
+  title: { color: '#fff', fontSize: 24, marginBottom: 20, fontWeight: '600' },
   input: {
-    padding: "10px",
-    marginBottom: "15px",
-    borderRadius: "4px",
-    border: "1px solid #fff",
-    backgroundColor: "#fff",
-    color: "#fff",
-    fontSize: "16px",
-    outline: "none",
+    width: '100%',
+    padding: 12,
+    marginBottom: 15,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#fff',
+    backgroundColor: '#fff',
+    color: '#000',
+    fontSize: 16,
   },
   button: {
-    padding: "8px 20px",
-    borderRadius: "6px",
-    border: "none",
-    backgroundColor: "#6C63FF",
-    color: "#fff",
-    fontSize: "14px",
-    cursor: "pointer",
-    marginTop: "25px",
-    alignSelf: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    borderRadius: 6,
+    backgroundColor: '#6C63FF',
+    marginTop: 10,
   },
-  loginText: {
-    color: "#fff",
-    fontSize: "14px",
-    marginTop: "15px",
-    fontFamily: "'Inter', sans-serif",
-    textAlign: "center",
-  },
-  link: {
-    color: "#6C63FF",
-    cursor: "pointer",
-    textDecoration: "underline",
-  },
-  error: {
-    color: "#FF6B6B",
-    marginBottom: "10px",
-    textAlign: "center",
-  },
-};
-
-export default Login;
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  link: { color: '#6C63FF', marginTop: 20, textDecorationLine: 'underline' },
+  error: { color: '#FF6B6B', marginBottom: 10, textAlign: 'center' },
+});

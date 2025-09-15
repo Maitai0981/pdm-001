@@ -25,6 +25,7 @@
     "expo-asset": "~11.1.7",
     "expo-file-system": "~18.1.11",
     "expo-image-picker": "~16.1.4",
+    "expo-linking": "^8.0.8",
     "expo-status-bar": "~2.2.3",
     "pix-payload": "^1.0.4",
     "prop-types": "^15.8.1",
