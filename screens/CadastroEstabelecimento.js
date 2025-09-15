@@ -20,7 +20,6 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { decode as atob, encode as btoa } from 'base-64';
 
-
 export default function CadastroEstabelecimento() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -29,7 +28,7 @@ export default function CadastroEstabelecimento() {
   const [user, setUser] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [estabelecimentoId, setEstabelecimentoId] = useState(null);
-
+  const [keyPix, setKeyPix] = useState('');
   const [imagemDia, setImagemDia] = useState(null);
   const [imagemNoite, setImagemNoite] = useState(null);
   const [nome, setNome] = useState('');
@@ -134,40 +133,40 @@ export default function CadastroEstabelecimento() {
   async function salvarImagemNoStorage(estabelecimentoId, tipo, uri) {
     try {
       logStep(`Iniciando upload da imagem ${tipo} no Storage`);
-  
+
       let localUri = uri;
-  
+
       if (!uri.startsWith('file://')) {
         const fileName = `${estabelecimentoId}_${tipo}.jpg`;
         const path = FileSystem.cacheDirectory + fileName;
         await FileSystem.downloadAsync(uri, path);
         localUri = path;
       }
-  
+
       const base64 = await FileSystem.readAsStringAsync(localUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
-  
+
       const fileBytes = base64ToUint8Array(base64);
-  
+
       const filePath = `estabelecimentos/${estabelecimentoId}_${tipo}.jpg`;
-  
+
       const { data, error } = await supabase.storage
         .from('imagens-estabelecimentos')
         .upload(filePath, fileBytes, {
           contentType: 'image/jpeg',
           upsert: true,
         });
-  
+
       if (error) {
         logStep(`Erro ao salvar imagem ${tipo}`, error, 'ERROR');
         throw error;
       }
-  
+
       const { data: publicUrlData } = supabase.storage
         .from('imagens-estabelecimentos')
         .getPublicUrl(filePath);
-  
+
       logStep(`Imagem ${tipo} salva com sucesso`, publicUrlData);
       return publicUrlData.publicUrl;
     } catch (error) {
@@ -175,7 +174,6 @@ export default function CadastroEstabelecimento() {
       throw error;
     }
   }
-  
 
   async function fetchTiposEstabelecimento() {
     logStep('Buscando tipos de estabelecimento');
@@ -228,20 +226,31 @@ export default function CadastroEstabelecimento() {
   // Nova função para carregar dados do estabelecimento existente
   async function carregarDadosEstabelecimento(estabelecimento) {
     try {
-      logStep('Carregando dados do estabelecimento para edição', { id: estabelecimento.id });
-      
+      logStep('Carregando dados do estabelecimento para edição', {
+        id: estabelecimento.id,
+      });
+
       // Preencher dados básicos
+      setKeyPix(estabelecimento.key_pix || '');
       setNome(estabelecimento.nome || '');
       setCidade(estabelecimento.cidade || '');
       setCep(estabelecimento.cep || '');
-      setHorarioAbertura(estabelecimento.horario_abertura?.substring(0, 5) || '');
-      setHorarioFechamento(estabelecimento.horario_fechamento?.substring(0, 5) || '');
+      setKeyPix(estabelecimento.key_pix || '');
+
+      setHorarioAbertura(
+        estabelecimento.horario_abertura?.substring(0, 5) || ''
+      );
+      setHorarioFechamento(
+        estabelecimento.horario_fechamento?.substring(0, 5) || ''
+      );
       setValorReserva(estabelecimento.valor_reserva?.toString() || '');
       setTempoReserva(estabelecimento.tempo_reserva?.toString() || '60');
 
       // Encontrar e definir o tipo do estabelecimento
       if (estabelecimento.tipo && tiposEstabelecimento.length > 0) {
-        const tipoEncontrado = tiposEstabelecimento.find(t => t.nome === estabelecimento.tipo);
+        const tipoEncontrado = tiposEstabelecimento.find(
+          (t) => t.nome === estabelecimento.tipo
+        );
         if (tipoEncontrado) {
           setTipoId(tipoEncontrado.id);
         }
@@ -251,15 +260,15 @@ export default function CadastroEstabelecimento() {
       if (estabelecimento.dias_funcionamento) {
         const diasNomes = estabelecimento.dias_funcionamento.split(',');
         const diasIds = diasSemana
-          .filter(dia => diasNomes.includes(dia.abreviacao))
-          .map(dia => dia.id);
+          .filter((dia) => diasNomes.includes(dia.abreviacao))
+          .map((dia) => dia.id);
         setDiasSelecionados(diasIds);
       }
 
       // Carregar infraestruturas
       if (estabelecimento.estabelecimento_infraestrutura) {
         const infraObj = {};
-        estabelecimento.estabelecimento_infraestrutura.forEach(item => {
+        estabelecimento.estabelecimento_infraestrutura.forEach((item) => {
           infraObj[item.tipos_infraestrutura.nome] = item.disponivel;
         });
         setInfraSelecionadas(infraObj);
@@ -276,7 +285,10 @@ export default function CadastroEstabelecimento() {
       logStep('Dados do estabelecimento carregados com sucesso');
     } catch (error) {
       logStep('Erro ao carregar dados do estabelecimento', error, 'ERROR');
-      Alert.alert('Erro', 'Não foi possível carregar os dados do estabelecimento');
+      Alert.alert(
+        'Erro',
+        'Não foi possível carregar os dados do estabelecimento'
+      );
     }
   }
 
@@ -289,7 +301,9 @@ export default function CadastroEstabelecimento() {
         if (route.params?.estabelecimento) {
           setIsEditMode(true);
           setEstabelecimentoId(route.params.estabelecimento.id);
-          logStep('Modo de edição detectado', { id: route.params.estabelecimento.id });
+          logStep('Modo de edição detectado', {
+            id: route.params.estabelecimento.id,
+          });
         }
 
         const {
@@ -332,7 +346,12 @@ export default function CadastroEstabelecimento() {
 
   // useEffect para carregar dados quando os dados básicos estiverem prontos
   useEffect(() => {
-    if (isEditMode && route.params?.estabelecimento && tiposEstabelecimento.length > 0 && diasSemana.length > 0) {
+    if (
+      isEditMode &&
+      route.params?.estabelecimento &&
+      tiposEstabelecimento.length > 0 &&
+      diasSemana.length > 0
+    ) {
       carregarDadosEstabelecimento(route.params.estabelecimento);
     }
   }, [isEditMode, tiposEstabelecimento, diasSemana]);
@@ -401,6 +420,7 @@ export default function CadastroEstabelecimento() {
         valorReserva: !!valorReserva,
         tempoReserva: !!tempoReserva,
         diasSelecionados: diasSelecionados.length > 0,
+        keyPix: !!keyPix, // se obrigatório
       };
 
       if (Object.values(camposObrigatorios).some((v) => !v)) {
@@ -441,18 +461,19 @@ export default function CadastroEstabelecimento() {
         .map((d) => d.abreviacao)
         .join(',');
 
-      const dadosEstabelecimento = {
-        nome,
-        tipo: tiposEstabelecimento.find((t) => t.id === tipoId)?.nome || '',
-        cidade,
-        cep,
-        horario_abertura: horarioAbertura,
-        horario_fechamento: horarioFechamento,
-        valor_reserva: parseFloat(valorReserva),
-        tempo_reserva: parseInt(tempoReserva, 10),
-        dias_funcionamento: diasNomes,
-        usuario_id: usuarioId,
-      };
+        const dadosEstabelecimento = {
+          nome,
+          tipo: tiposEstabelecimento.find((t) => t.id === tipoId)?.nome || '',
+          cidade,
+          cep,
+          horario_abertura: horarioAbertura,
+          horario_fechamento: horarioFechamento,
+          valor_reserva: parseFloat(valorReserva),
+          tempo_reserva: parseInt(tempoReserva, 10),
+          dias_funcionamento: diasNomes,
+          usuario_id: usuarioId,
+          key_pix: keyPix, // adiciona aqui
+        };
 
       logStep('Dados para processamento', dadosEstabelecimento);
 
@@ -460,8 +481,10 @@ export default function CadastroEstabelecimento() {
 
       if (isEditMode) {
         // Modo de edição - atualizar estabelecimento existente
-        logStep('Atualizando estabelecimento existente', { id: estabelecimentoId });
-        
+        logStep('Atualizando estabelecimento existente', {
+          id: estabelecimentoId,
+        });
+
         const { data, error } = await supabase
           .from('estabelecimentos')
           .update(dadosEstabelecimento)
@@ -479,7 +502,9 @@ export default function CadastroEstabelecimento() {
         }
 
         estabelecimento = data;
-        logStep('Estabelecimento atualizado com sucesso', { id: estabelecimento.id });
+        logStep('Estabelecimento atualizado com sucesso', {
+          id: estabelecimento.id,
+        });
 
         // Remover dias de funcionamento existentes e inserir novos
         await supabase
@@ -492,11 +517,10 @@ export default function CadastroEstabelecimento() {
           .from('estabelecimento_infraestrutura')
           .delete()
           .eq('estabelecimento_id', estabelecimentoId);
-
       } else {
         // Modo de criação - inserir novo estabelecimento
         logStep('Criando novo estabelecimento');
-        
+
         const { data, error } = await supabase
           .from('estabelecimentos')
           .insert([dadosEstabelecimento])
@@ -513,7 +537,9 @@ export default function CadastroEstabelecimento() {
         }
 
         estabelecimento = data;
-        logStep('Estabelecimento inserido com sucesso', { id: estabelecimento.id });
+        logStep('Estabelecimento inserido com sucesso', {
+          id: estabelecimento.id,
+        });
       }
 
       // Salvar imagens na tabela imagens-estabelecimento
@@ -576,7 +602,12 @@ export default function CadastroEstabelecimento() {
       }
 
       logStep('Processo de salvamento concluído com sucesso');
-      Alert.alert('Sucesso', isEditMode ? 'Estabelecimento atualizado!' : 'Estabelecimento cadastrado!');
+      Alert.alert(
+        'Sucesso',
+        isEditMode
+          ? 'Estabelecimento atualizado!'
+          : 'Estabelecimento cadastrado!'
+      );
       navigation.goBack();
     } catch (error) {
       logStep('Erro não tratado no processo de salvamento', error, 'ERROR');
@@ -629,6 +660,15 @@ export default function CadastroEstabelecimento() {
         value={cep}
         onChangeText={setCep}
         keyboardType="numeric"
+      />
+
+      <Text style={styles.label}>Chave Pix</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Digite a chave Pix"
+        value={keyPix}
+        onChangeText={setKeyPix}
+        autoCapitalize="none"
       />
 
       <View style={styles.row}>
@@ -757,7 +797,6 @@ export default function CadastroEstabelecimento() {
           <ActivityIndicator size="large" color="#4B0082" />
         </View>
       </Modal>
-
     </ScrollView>
   );
 }
@@ -910,5 +949,4 @@ const pickerSelectStyles = StyleSheet.create({
     bottom: 0,
     zIndex: 1000,
   },
-
 });

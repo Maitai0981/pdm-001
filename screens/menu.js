@@ -14,6 +14,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { supabase } from '../supabaseClient';
+import PixPayload from 'pix-payload';
+import QRCode from 'react-native-qrcode-svg';
+
 
 export default function Menu() {
   const navigation = useNavigation();
@@ -180,14 +183,14 @@ export default function Menu() {
         cidade,
         cep,
         tempo_reserva,
+        key_pix,
         estabelecimento_infraestrutura (
           disponivel,
           tipos_infraestrutura (nome)
         )
       `
         )
-        .ilike('nome', `%${search}%`)
-        .limit(20);
+        .ilike('nome', `%${search}%`);
 
       if (error) {
         console.log('Erro ao buscar estabelecimentos:', error.message);
@@ -201,6 +204,8 @@ export default function Menu() {
           const imagens = await fetchImagens(estab.id);
           const infraestrutura = getInfraestruturaFromRelation(estab);
           const diasFuncionamento = getDiasFuncionamentoFromData(estab);
+          console.log(`URL dia: ${imagens.dia}`);
+          console.log(`URL noite: ${imagens.noite}`);
 
           return {
             ...estab,
@@ -217,7 +222,58 @@ export default function Menu() {
     }
 
     fetchArenas();
+
   }, [search]);
+
+  useEffect(() => {
+    async function fetchReservasUsuario() {
+      if (!user?.id) {
+        setReservas([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('reservas')
+          .select(
+            `
+            id,
+            estabelecimento:estabelecimento_id (
+              id,
+              nome
+            ),
+            horario_id,
+            horarios_disponiveis:horario_id (
+              horario,
+              data
+            )
+          `
+          )
+          .eq('usuario_id', user.id)
+          .order('id', { ascending: false });
+
+        if (error) {
+          console.log('Erro ao buscar reservas:', error.message);
+          setReservas([]);
+        } else {
+          // Mapear dados para formato mais simples
+          const reservasFormatadas = data.map((item) => ({
+            id: item.id,
+            nome: item.estabelecimento?.nome || 'Estabelecimento',
+            data: item.horarios_disponiveis?.data || 'Data não informada',
+            horario:
+              item.horarios_disponiveis?.horario || 'Horário não informado',
+          }));
+          setReservas(reservasFormatadas);
+        }
+      } catch (err) {
+        console.log('Erro inesperado ao buscar reservas:', err);
+        setReservas([]);
+      }
+    }
+
+    fetchReservasUsuario();
+  }, [user]);
 
   // Modal corrigido para mostrar ambas as imagens
   const openModal = (arena) => {
@@ -399,13 +455,7 @@ export default function Menu() {
     </TouchableOpacity>
   );
 
-  const [notifications, setNotifications] = useState([
-    { id: 1, text: 'Sua reserva foi confirmada!' },
-    { id: 2, text: 'Nova promoção disponível.' },
-  ]);
-  const [reservas, setReservas] = useState([
-    { id: 1, nome: 'Arena 15', data: '2024-06-10', horario: '18:00' },
-  ]);
+  const [reservas, setReservas] = useState([]);
 
   const [novoNome, setNovoNome] = useState(user?.nome);
 
@@ -465,19 +515,6 @@ export default function Menu() {
           ))
         ) : (
           <Text style={styles.modalText}>Nenhuma reserva.</Text>
-        )
-      );
-    } else if (type === 'notifications') {
-      setModalTitle('Notificações');
-      setModalContent(
-        notifications.length > 0 ? (
-          notifications.map((n) => (
-            <Text key={n.id} style={styles.modalText}>
-              • {n.text}
-            </Text>
-          ))
-        ) : (
-          <Text style={styles.modalText}>Nenhuma notificação.</Text>
         )
       );
     }
@@ -569,12 +606,6 @@ export default function Menu() {
 
       {/* Navegação inferior */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navButton}
-          onPress={() => openInfoModal('notifications')}>
-          <Ionicons name="notifications" size={28} color="#4B0082" />
-          <Text style={styles.navText}>Notificações</Text>
-        </TouchableOpacity>
         <TouchableOpacity
           style={styles.navButton}
           onPress={() => openInfoModal('reservas')}>

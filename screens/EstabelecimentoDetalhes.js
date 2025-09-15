@@ -11,31 +11,74 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Linking,
+  Clipboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
+import QRCode from 'react-native-qrcode-svg';
 import { Dimensions } from 'react-native';
+import { payload as gerarPayloadPixLibrary } from 'react-qrcode-pix';
+
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function EstabelecimentoDetalhes({ route, navigation }) {
-  const { estabelecimento, usuarioAtual } = route.params;
+  const { estabelecimento: estabProps, usuarioAtual } = route.params;
 
   const [deletando, setDeletando] = useState(false);
-
-  // Estados para reserva
   const [horariosReservados, setHorariosReservados] = useState([]);
   const [horariosDisponiveis, setHorariosDisponiveis] = useState([]);
   const [horariosSelecionados, setHorariosSelecionados] = useState([]);
   const [modalReservaVisivel, setModalReservaVisivel] = useState(false);
   const [carregandoHorarios, setCarregandoHorarios] = useState(false);
+  const [mostrarPagamento, setMostrarPagamento] = useState(false);
+  const [processandoPagamento, setProcessandoPagamento] = useState(false);
+  const [estabelecimento, setEstabelecimento] = useState(estabProps);
 
-  // Estado para data da reserva
   const [dataReserva, setDataReserva] = useState(() => {
     return new Date().toISOString().split('T')[0];
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Efeito para carregar os dados completos do estabelecimento
+  useEffect(() => {
+    const fetchEstabelecimento = async () => {
+      const { data, error } = await supabase
+        .from('estabelecimentos')
+        .select(`
+          *,
+          imagens_estabelecimento!inner(url, tipo),
+          estabelecimento_infraestrutura!inner(tipos_infraestrutura(nome)),
+          estabelecimento_dias_funcionamento!inner(dias_semana(abreviacao))
+        `)
+        .eq('id', estabProps.id);
+
+      if (error) {
+        Alert.alert('Erro', 'Não foi possível carregar os detalhes do estabelecimento.');
+        console.error(error);
+        return;
+      }
+
+      // Mapeia os dados para o formato que o componente espera
+      const mappedEstabelecimento = {
+        ...data,
+        imagem_dia: data.imagens_estabelecimento.find(img => img.tipo?.toLowerCase().trim() === 'dia')?.url,
+        imagem_noite: data.imagens_estabelecimento.find(img => img.tipo?.toLowerCase().trim() === 'noite')?.url,
+
+        infraestrutura: data.estabelecimento_infraestrutura.reduce((acc, curr) => {
+          acc[curr.tipos_infraestrutura.nome] = true;
+          return acc;
+        }, {}),
+        dias_funcionamento: data.estabelecimento_dias_funcionamento
+          .map(d => d.dias_semana.abreviacao)
+          .join(','),
+      };
+      setEstabelecimento(mappedEstabelecimento);
+    };
+
+    fetchEstabelecimento();
+  }, [estabProps.id]);
 
   const handleEditar = () => {
     navigation.navigate('CadastroEstabelecimento', {
@@ -43,10 +86,6 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       usuario: usuarioAtual,
     });
   };
-
-  useEffect(() => {
-    console.log('Usuário atual na tela de detalhes:', usuarioAtual);
-  }, [usuarioAtual]);
 
   const formatDias = (dias) => {
     if (!dias) return 'Não informado';
@@ -61,7 +100,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       sab: 'Sábado',
     };
 
-    const ordem = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+    const ordem = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 
     const lista = dias
       .toLowerCase()
@@ -100,10 +139,9 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       hFim = 24;
     }
 
-    const intervalo =
-      estabelecimento.tempo_reserva && estabelecimento.tempo_reserva > 0
-        ? estabelecimento.tempo_reserva
-        : 60; // padrão 60 min
+    const intervalo = estabelecimento.tempo_reserva && estabelecimento.tempo_reserva > 0
+      ? estabelecimento.tempo_reserva
+      : 60;
 
     let current = hInicio * 60 + mInicio;
     const end = hFim * 60 + mFim;
@@ -125,14 +163,14 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
     return time.toString().slice(0, 5);
   };
 
-  // Atualiza horários sempre que dataReserva mudar e modal estiver aberto
   useEffect(() => {
-    if (modalReservaVisivel) {
+    if (modalReservaVisivel && estabelecimento) {
       carregarHorarios(dataReserva);
     }
-  }, [dataReserva]);
+  }, [dataReserva, modalReservaVisivel, estabelecimento]);
 
   const carregarHorarios = async (dataSelecionada) => {
+    if (!estabelecimento) return;
     setCarregandoHorarios(true);
     setHorariosSelecionados([]);
 
@@ -163,7 +201,7 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       return {
         id: horarioBanco ? horarioBanco.id : null,
         horario: h,
-        status: horarioBanco ? horarioBanco.status : 'livre',
+        status: horarioBanco ? horarioBanco.status : 'disponivel',
       };
     });
 
@@ -178,7 +216,10 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
 
   const abrirModalReserva = () => {
     setModalReservaVisivel(true);
-    carregarHorarios(dataReserva);
+    setMostrarPagamento(false);
+    if(estabelecimento) {
+      carregarHorarios(dataReserva);
+    }
   };
 
   const toggleHorario = (horarioObj) => {
@@ -196,11 +237,46 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
     }
   };
 
-  const handleCompra = async () => {
+  const valorTotal = (
+    horariosSelecionados.length * parseFloat(estabelecimento?.valor_reserva || 0)
+  ).toFixed(2);
+
+  const gerarPayloadPix = () => {
+    const valorNumerico = parseFloat(valorTotal)+0.000001;
+
+    if (valorNumerico <= 0) {
+        Alert.alert('Erro', 'O valor total do PIX deve ser maior que zero.');
+        throw new Error('Valor do PIX deve ser maior que zero');
+    }
+
+    return gerarPayloadPixLibrary({
+      pixkey: estabelecimento.key_pix,
+      merchant: estabelecimento.nome.substring(0, 25),
+      city: estabelecimento.cidade.substring(0, 15),
+      amount: valorNumerico,
+    });
+  };
+  const handleCompra = () => {
     if (horariosSelecionados.length === 0) {
       alert('Selecione pelo menos um horário para continuar.');
       return;
     }
+    try {
+      gerarPayloadPix();
+      setMostrarPagamento(true);
+    } catch (e) {
+      console.log(e.message);
+    }
+  };
+
+  const handleCopiarPix = () => {
+    const pixPayload = gerarPayloadPix();
+    Clipboard.setString(pixPayload);
+    Alert.alert('Código PIX Copiado', 'O código PIX foi copiado para a área de transferência. Agora, abra seu app bancário e utilize a opção "Pix Copia e Cola" para realizar o pagamento.');
+  };
+
+  const confirmarPagamento = async () => {
+    setProcessandoPagamento(true);
 
     try {
       const hoje = dataReserva;
@@ -224,6 +300,12 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
 
           if (erroHorario) throw erroHorario;
           horarioId = novoHorario.id;
+        } else {
+          const { error: updError } = await supabase
+            .from('horarios_disponiveis')
+            .update({ status: 'reservado' })
+            .eq('id', horarioId);
+          if (updError) throw updError;
         }
 
         const { error: reservaError } = await supabase.from('reservas').insert([
@@ -231,32 +313,28 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
             usuario_id: usuarioAtual?.id,
             estabelecimento_id: estabelecimento.id,
             horario_id: horarioId,
+            data_reserva: new Date(),
           },
         ]);
         if (reservaError) throw reservaError;
-
-        const { error: updError } = await supabase
-          .from('horarios_disponiveis')
-          .update({ status: 'reservado' })
-          .eq('id', horarioId);
-        if (updError) throw updError;
       }
 
       alert('Reserva(s) efetuada(s) com sucesso!');
 
-      // Atualiza horários após reserva
       await carregarHorarios(hoje);
 
       setHorariosSelecionados([]);
       setModalReservaVisivel(false);
+      setMostrarPagamento(false);
+      setProcessandoPagamento(false);
     } catch (err) {
+      setProcessandoPagamento(false);
       alert('Erro ao efetuar a reserva: ' + err.message);
     }
   };
 
-  const isDono = usuarioAtual && estabelecimento.usuario_id === usuarioAtual.id;
+  const isDono = usuarioAtual && estabelecimento?.usuario_id === usuarioAtual.id;
 
-  // Manipulador do DatePicker
   const onChangeDate = (event, selectedDate) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
@@ -264,6 +342,15 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
       setDataReserva(isoDate);
     }
   };
+
+  if (!estabelecimento) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4B0082" />
+        <Text style={{ marginTop: 10 }}>Carregando detalhes...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -358,7 +445,6 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
           )}
           {!estabelecimento.imagem_dia && !estabelecimento.imagem_noite && (
             <View style={[styles.imageWrapper, styles.placeholderImage]}>
-              <Ionicons name="image-outline" size={60} color="#ccc" />
               <Text style={styles.placeholderText}>
                 Sem imagens disponíveis
               </Text>
@@ -390,6 +476,13 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
           <Text style={styles.infoLabel}>Valor Reserva</Text>
           <Text style={styles.infoText}>
             R$ {parseFloat(estabelecimento.valor_reserva).toFixed(2)}
+          </Text>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Text style={styles.infoLabel}>Chave PIX</Text>
+          <Text style={styles.infoText}>
+            {estabelecimento.key_pix || 'Não informada'}
           </Text>
         </View>
 
@@ -463,108 +556,169 @@ export default function EstabelecimentoDetalhes({ route, navigation }) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Horários Disponíveis</Text>
-              <TouchableOpacity onPress={() => setModalReservaVisivel(false)}>
+              <Text style={styles.modalTitle}>
+                {mostrarPagamento ? 'Pagamento PIX' : 'Horários Disponíveis'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalReservaVisivel(false);
+                  setMostrarPagamento(false);
+                }}>
                 <Ionicons name="close-circle-outline" size={30} color="#999" />
               </TouchableOpacity>
             </View>
 
-            {/* Seletor de data */}
-            <TouchableOpacity
-              style={styles.dateSelectorButton}
-              onPress={() => setShowDatePicker(true)}>
-              <Text style={styles.dateSelectorText}>{dataReserva}</Text>
-            </TouchableOpacity>
+            {mostrarPagamento ? (
+              <View style={styles.pagamentoContainer}>
+                <Text style={styles.pagamentoTitulo}>Pagamento via PIX</Text>
 
-            {showDatePicker && (
-              <DateTimePicker
-                value={new Date(dataReserva)}
-                mode="date"
-                display="default"
-                onChange={onChangeDate}
-                minimumDate={new Date()}
-              />
-            )}
+                <Text style={styles.pagamentoValor}>R$ {valorTotal}</Text>
 
-            <Text style={styles.subtitle}>{estabelecimento.nome}</Text>
-
-            {carregandoHorarios ? (
-              <ActivityIndicator
-                size="large"
-                color="#4B0082"
-                style={{ marginVertical: 20 }}
-              />
-            ) : (
-              <>
-                <ScrollView contentContainerStyle={styles.horariosScroll}>
-                  {horariosDisponiveis.map((horaObj) => {
-                    const ocupado = horariosReservados.includes(
-                      horaObj.horario
-                    );
-                    const selecionado = horariosSelecionados.some(
-                      (h) => h.horario === horaObj.horario
-                    );
-                    return (
-                      <TouchableOpacity
-                        key={horaObj.id ?? horaObj.horario}
-                        disabled={ocupado}
-                        onPress={() => toggleHorario(horaObj)}
-                        style={[
-                          styles.horarioButton,
-                          ocupado && styles.horarioOcupado,
-                          selecionado && styles.horarioSelecionado,
-                        ]}>
-                        <Text
-                          style={[
-                            styles.horarioText,
-                            ocupado && styles.horarioTextOcupado,
-                            selecionado && styles.horarioTextSelecionado,
-                          ]}>
-                          {horaObj.horario}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                <View style={styles.modalInfoGroup}>
-                  <Text style={styles.modalInfoLabel}>Valor por hora:</Text>
-                  <Text style={styles.modalInfoValue}>
-                    R$ {parseFloat(estabelecimento.valor_reserva).toFixed(2)}
-                  </Text>
+                <View style={styles.qrCodeContainer}>
+                  {estabelecimento?.key_pix ? (
+                    <QRCode
+                      value={gerarPayloadPix()}
+                      size={200}
+                      backgroundColor="#fff"
+                      color="#000"
+                    />
+                  ) : (
+                    <Text>Chave PIX não informada.</Text>
+                  )}
                 </View>
 
-                <View style={styles.modalInfoGroup}>
-                  <Text style={styles.modalInfoLabel}>Total da Reserva:</Text>
-                  <Text style={styles.modalInfoTotal}>
-                    R${' '}
-                    {(
-                      horariosSelecionados.length *
-                      parseFloat(estabelecimento.valor_reserva)
-                    ).toFixed(2)}
-                  </Text>
-                </View>
+                {estabelecimento?.key_pix && (
+                  <TouchableOpacity
+                    style={[
+                      styles.modalActionButton,
+                      styles.modalActionButtonPrimary,
+                    ]}
+                    onPress={handleCopiarPix}>
+                    <Text style={styles.modalActionText}>Copiar Código PIX</Text>
+                  </TouchableOpacity>
+                )}
 
-                <TouchableOpacity
-                  style={[
-                    styles.modalActionButton,
-                    styles.modalActionButtonPrimary,
-                    horariosSelecionados.length === 0 &&
-                      styles.modalActionButtonDisabled,
-                  ]}
-                  onPress={handleCompra}
-                  disabled={horariosSelecionados.length === 0}>
-                  <Text style={styles.modalActionText}>Efetuar Compra</Text>
-                </TouchableOpacity>
+                <Text style={styles.instrucoes}>
+                  Escaneie o código QR ou copie o código acima para realizar o
+                  pagamento.
+                </Text>
 
                 <TouchableOpacity
                   style={[
                     styles.modalActionButton,
                     styles.modalActionButtonSecondary,
                   ]}
-                  onPress={() => setModalReservaVisivel(false)}>
-                  <Text style={styles.modalActionTextSecondary}>Fechar</Text>
+                  onPress={confirmarPagamento}
+                  disabled={processandoPagamento}>
+                  {processandoPagamento ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.modalActionTextSecondary}>
+                      Confirmar Pagamento
+                    </Text>
+                  )}
                 </TouchableOpacity>
+
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={styles.dateSelectorButton}
+                  onPress={() => setShowDatePicker(true)}>
+                  <Ionicons name="calendar-outline" size={20} color="#4B0082" />
+                  <Text style={styles.dateSelectorText}>{dataReserva}</Text>
+                </TouchableOpacity>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={new Date(dataReserva)}
+                    mode="date"
+                    display="default"
+                    onChange={onChangeDate}
+                    minimumDate={new Date()}
+                  />
+                )}
+
+                <Text style={styles.subtitle}>{estabelecimento.nome}</Text>
+
+                {carregandoHorarios ? (
+                  <ActivityIndicator
+                    size="large"
+                    color="#4B0082"
+                    style={{ marginVertical: 20 }}
+                  />
+                ) : (
+                  <>
+                    <ScrollView contentContainerStyle={styles.horariosScroll}>
+                      {horariosDisponiveis.map((horaObj) => {
+                        const ocupado = horariosReservados.includes(
+                          horaObj.horario
+                        );
+                        const selecionado = horariosSelecionados.some(
+                          (h) => h.horario === horaObj.horario
+                        );
+                        return (
+                          <TouchableOpacity
+                            key={horaObj.id ?? horaObj.horario}
+                            disabled={ocupado}
+                            onPress={() => toggleHorario(horaObj)}
+                            style={[
+                              styles.horarioButton,
+                              ocupado && styles.horarioOcupado,
+                              selecionado && styles.horarioSelecionado,
+                            ]}>
+                            <Text
+                              style={[
+                                styles.horarioText,
+                                ocupado && styles.horarioTextOcupado,
+                                selecionado && styles.horarioTextSelecionado,
+                              ]}>
+                              {horaObj.horario}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+
+                    <View style={styles.modalInfoGroup}>
+                      <Text style={styles.modalInfoLabel}>Valor por hora:</Text>
+                      <Text style={styles.modalInfoValue}>
+                        R${' '}
+                        {parseFloat(estabelecimento.valor_reserva).toFixed(2)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.modalInfoGroup}>
+                      <Text style={styles.modalInfoLabel}>
+                        Total da Reserva:
+                      </Text>
+                      <Text style={styles.modalInfoTotal}>R$ {valorTotal}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalActionButton,
+                        styles.modalActionButtonPrimary,
+                        horariosSelecionados.length === 0 &&
+                          styles.modalActionButtonDisabled,
+                      ]}
+                      onPress={handleCompra}
+                      disabled={horariosSelecionados.length === 0}>
+                      <Text style={styles.modalActionText}>Efetuar Compra</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modalActionButton,
+                        styles.modalActionButtonSecondary,
+                      ]}
+                      onPress={() => setModalReservaVisivel(false)}>
+                      <Text style={styles.modalActionTextSecondary}>
+                        Fechar
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </>
             )}
           </View>
@@ -702,7 +856,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  // NOVOS ESTILOS DO MODAL
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -714,7 +867,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 20,
     padding: 20,
-    maxHeight: '80%',
+    maxHeight: '95%',
     elevation: 10,
     shadowColor: '#000',
     shadowOpacity: 0.2,
@@ -727,8 +880,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    paddingBottom: 10,
-    marginBottom: 15,
+    paddingBottom: 4,
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 22,
@@ -741,13 +894,12 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   horariosScroll: {
-    flexDirection: 'row', // remova esta linha
-    flexWrap: 'wrap', // remova esta linha
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-start',
-    maxHeight: 400, // aumente para mostrar mais itens
+    maxHeight: 400,
     marginBottom: 15,
   },
-
   horarioButton: {
     margin: 5,
     paddingVertical: 10,
@@ -762,7 +914,7 @@ const styles = StyleSheet.create({
     borderColor: '#4B0082',
   },
   horarioOcupado: {
-    backgroundColor: '#ef5350', // Vermelho mais suave
+    backgroundColor: '#ef5350',
     borderColor: '#d32f2f',
     opacity: 0.8,
   },
@@ -802,12 +954,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalActionButtonPrimary: {
-    backgroundColor: '#4CAF50', // Verde vibrante para o botão principal
+    backgroundColor: '#4CAF50',
   },
   modalActionButtonDisabled: {
     backgroundColor: '#ccc',
   },
   modalActionButtonSecondary: {
+    backgroundColor: '#4B0082',
+    borderWidth: 1,
+    borderColor: '#4B0082',
+  },
+  modalActionButtonTertiary: {
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#4B0082',
@@ -816,24 +973,108 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+    padding: 2,
   },
   modalActionTextSecondary: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    padding: 4,
+  },
+  modalActionTextTertiary: {
     color: '#4B0082',
     fontWeight: 'bold',
     fontSize: 16,
   },
   dateSelectorButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4B0082',
     marginBottom: 15,
-    alignItems: 'center',
   },
   dateSelectorText: {
     color: '#4B0082',
     fontWeight: '600',
     fontSize: 16,
+    marginLeft: 10,
+  },
+  pagamentoContainer: {
+    alignItems: 'center',
+  },
+  pagamentoTitulo: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4B0082',
+    marginBottom: 1,
+  },
+  pagamentoValor: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'green',
+    marginBottom: 2,
+  },
+  qrCodeContainer: {
+    padding: 10,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    marginBottom: 3,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  chavePixLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#555',
+    marginBottom: 5,
+  },
+  chavePix: {
+    fontSize: 14,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 15,
+    padding: 10,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+  },
+  botoesPagamento: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 15,
+  },
+  botaoAcao: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  botaoCopiar: {
+    backgroundColor: '#4B0082',
+  },
+  botaoApp: {
+    backgroundColor: '#25D366',
+  },
+  textoBotaoAcao: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 5,
+  },
+  instrucoes: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
 });
